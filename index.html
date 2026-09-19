@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>校优秀 · 3D沙盒生存</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; user-select:none; -webkit-user-select:none; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#000; font-family:"Microsoft YaHei",sans-serif; }
+  #game-canvas { position:absolute; inset:0; display:block; }
+
+  /* ---------- 通用 ---------- */
+  .panel { background:rgba(10,14,24,.62); border:1px solid rgba(255,255,255,.14); border-radius:12px; backdrop-filter:blur(6px); color:#fff; }
+
+  /* ---------- 角色状态区（右上） ---------- */
+  #status-panel { position:absolute; top:14px; right:14px; width:250px; padding:12px 14px; z-index:20; }
+  #status-panel .row { display:flex; align-items:center; margin:5px 0; }
+  #status-panel .ico { width:22px; text-align:center; font-size:15px; margin-right:6px; }
+  .bar { flex:1; height:12px; background:rgba(255,255,255,.12); border-radius:6px; overflow:hidden; }
+  .bar > i { display:block; height:100%; border-radius:6px; transition:width .3s; }
+  #hp-bar > i { background:linear-gradient(90deg,#ff4d6d,#ff8fa3); }
+  #hunger-bar > i { background:linear-gradient(90deg,#ff9f1c,#ffd166); }
+  #thirst-bar > i { background:linear-gradient(90deg,#2196f3,#6ec6ff); }
+  #energy-bar > i { background:linear-gradient(90deg,#06d6a0,#8ff5d2); }
+  #status-meta { display:flex; justify-content:space-between; font-size:12px; color:#cfe3ff; margin-top:8px; }
+  #status-meta b { color:#fff; }
+  #temp-warn { font-size:12px; margin-top:4px; height:16px; text-align:center; }
+  .cold { color:#7fd4ff; } .hot { color:#ff9f6e; }
+
+  /* ---------- 消息日志（左上） ---------- */
+  #msg-log { position:absolute; top:14px; left:14px; width:300px; z-index:20; pointer-events:none; }
+  #msg-log div { background:rgba(10,14,24,.55); border-left:3px solid #ffd166; color:#fff; font-size:13px;
+    padding:6px 10px; margin-bottom:6px; border-radius:6px; animation:fadein .3s; }
+  @keyframes fadein { from{opacity:0; transform:translateX(-8px);} to{opacity:1;} }
+
+  /* ---------- 宠物列表 ---------- */
+  #pet-list { position:absolute; top:14px; left:330px; z-index:20; display:flex; flex-direction:column; gap:6px; }
+  .pet-chip { padding:5px 10px; font-size:12px; color:#fff; background:rgba(10,14,24,.6);
+    border:1px solid rgba(255,255,255,.15); border-radius:20px; }
+
+  /* ---------- 快捷工具栏（底部中央） ---------- */
+  #hotbar { position:absolute; bottom:16px; left:50%; transform:translateX(-50%); display:flex; gap:8px; z-index:20; }
+  .slot { width:58px; height:58px; border-radius:10px; background:rgba(10,14,24,.65); border:2px solid rgba(255,255,255,.18);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; position:relative; transition:all .15s; }
+  .slot.active { border-color:#ffd166; box-shadow:0 0 12px rgba(255,209,102,.55); transform:translateY(-4px); }
+  .slot .icon { font-size:22px; line-height:1; }
+  .slot .name { font-size:10px; color:#cfe3ff; margin-top:2px; }
+  .slot .count { position:absolute; right:4px; bottom:2px; font-size:11px; color:#ffd166; font-weight:bold; }
+  .slot .key { position:absolute; left:4px; top:2px; font-size:10px; color:#8fa8c8; }
+
+  /* ---------- 操作按钮区（右下） ---------- */
+  #action-panel { position:absolute; right:18px; bottom:18px; width:210px; height:230px; z-index:20; }
+  .abtn { position:absolute; width:62px; height:62px; border-radius:50%; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; font-size:12px; color:#fff; cursor:pointer;
+    background:rgba(10,14,24,.65); border:2px solid rgba(255,255,255,.22); transition:all .12s; }
+  .abtn:hover { background:rgba(60,80,120,.7); }
+  .abtn:active { transform:scale(.92); }
+  .abtn .bi { font-size:20px; }
+  #btn-attack { right:120px; bottom:80px; border-color:rgba(255,90,90,.6); }
+  #btn-gather { right:30px;  bottom:110px; border-color:rgba(120,220,120,.6); }
+  #btn-jump   { right:130px; bottom:8px;  border-color:rgba(120,180,255,.6); }
+  #btn-crouch { right:60px;  bottom:30px;  border-color:rgba(200,200,200,.5); }
+  #btn-magic  { right:8px;   bottom:180px; width:70px; height:70px; border-color:rgba(190,120,255,.7); }
+  #btn-craft  { right:96px;  bottom:180px; width:70px; height:70px; border-color:rgba(255,209,102,.7); }
+  .abtn.toggled { background:rgba(90,110,160,.8); box-shadow:0 0 10px rgba(255,255,255,.4); }
+
+  /* ---------- 交互提示 ---------- */
+  #interact-tip { position:absolute; left:50%; bottom:96px; transform:translateX(-50%); z-index:20;
+    padding:8px 18px; font-size:14px; color:#fff; background:rgba(10,14,24,.7); border-radius:20px;
+    border:1px solid rgba(255,209,102,.5); display:none; }
+
+  /* ---------- 魔法绘制区 ---------- */
+  #magic-overlay { position:absolute; inset:0; z-index:40; display:none; background:rgba(5,5,20,.35); }
+  #magic-canvas-wrap { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); text-align:center; }
+  #magic-canvas { background:rgba(20,16,50,.85); border:2px solid #b478ff; border-radius:16px; cursor:crosshair; touch-action:none; }
+  #magic-hint { color:#d9b8ff; margin-top:10px; font-size:14px; }
+
+  /* ---------- 合成面板 ---------- */
+  #craft-panel { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:560px; max-height:78vh;
+    z-index:50; display:none; padding:18px; overflow-y:auto; }
+  #craft-panel h2 { font-size:18px; margin-bottom:4px; color:#ffd166; }
+  #craft-panel .tabs { display:flex; gap:8px; margin:10px 0; }
+  #craft-panel .tab { flex:1; text-align:center; padding:7px; border-radius:8px; cursor:pointer; font-size:14px;
+    background:rgba(255,255,255,.08); color:#cfe3ff; }
+  #craft-panel .tab.active { background:rgba(255,209,102,.25); color:#ffd166; border:1px solid #ffd166; }
+  .recipe { display:flex; align-items:center; justify-content:space-between; padding:8px 10px; margin-bottom:6px;
+    background:rgba(255,255,255,.06); border-radius:8px; font-size:13px; }
+  .recipe .rname { color:#fff; font-weight:bold; }
+  .recipe .rmat { color:#9fb6d8; font-size:12px; }
+  .recipe button { padding:5px 14px; border:none; border-radius:6px; background:#ffd166; color:#222; cursor:pointer; font-weight:bold; }
+  .recipe button:disabled { background:#555; color:#999; cursor:not-allowed; }
+  .recipe.locked { opacity:.45; }
+  #free-craft select { background:#1a2338; color:#fff; border:1px solid #456; border-radius:6px; padding:6px; margin-right:6px; width:120px; }
+  #free-craft button { padding:7px 20px; border:none; border-radius:8px; background:#b478ff; color:#fff; font-weight:bold; cursor:pointer; margin-top:10px; }
+  #craft-close { position:absolute; top:10px; right:14px; background:none; border:none; color:#fff; font-size:20px; cursor:pointer; }
+  #bench-tip { font-size:12px; color:#8ff5d2; margin-bottom:8px; }
+
+  /* ---------- 背包资源条 ---------- */
+  #inv-panel { position:absolute; left:14px; bottom:16px; z-index:20; padding:10px 14px; display:flex; gap:12px; flex-wrap:wrap; max-width:360px; }
+  .inv-item { font-size:12px; color:#cfe3ff; display:flex; align-items:center; gap:4px; }
+  .inv-item b { color:#ffd166; }
+
+  /* ---------- 开始界面 ---------- */
+  #start-screen { position:absolute; inset:0; z-index:100; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; background:radial-gradient(ellipse at center,#1b2a4a 0%,#060a18 100%); color:#fff; }
+  #start-screen h1 { font-size:46px; letter-spacing:8px; margin-bottom:8px;
+    background:linear-gradient(90deg,#ffd166,#6ec6ff,#b478ff); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  #start-screen p { color:#9fb6d8; margin:4px 0; font-size:14px; }
+  #start-btn { margin-top:26px; padding:14px 60px; font-size:20px; border:none; border-radius:30px; cursor:pointer;
+    background:linear-gradient(90deg,#ffd166,#ff9f1c); color:#332200; font-weight:bold; letter-spacing:4px; }
+  #start-btn:hover { transform:scale(1.05); }
+  .keys-help { margin-top:22px; font-size:12px; color:#7d93b8; line-height:1.9; text-align:center; }
+
+  #vignette { position:absolute; inset:0; pointer-events:none; z-index:15; transition:box-shadow .5s; }
+  #vignette.hurt { box-shadow:inset 0 0 120px rgba(255,0,0,.55); }
+  #vignette.colds { box-shadow:inset 0 0 120px rgba(80,170,255,.5); }
+  #vignette.hots { box-shadow:inset 0 0 120px rgba(255,120,0,.45); }
+</style>
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+<div id="vignette"></div>
+
+<!-- 角色状态区 -->
+<div id="status-panel" class="panel">
+  <div class="row"><span class="ico">❤️</span><div class="bar" id="hp-bar"><i style="width:100%"></i></div></div>
+  <div class="row"><span class="ico">🍖</span><div class="bar" id="hunger-bar"><i style="width:100%"></i></div></div>
+  <div class="row"><span class="ico">💧</span><div class="bar" id="thirst-bar"><i style="width:100%"></i></div></div>
+  <div class="row"><span class="ico">⚡</span><div class="bar" id="energy-bar"><i style="width:100%"></i></div></div>
+  <div id="status-meta">
+    <span>等级 <b id="lv">1</b></span>
+    <span>经验 <b id="xp">0</b></span>
+    <span>地貌 <b id="biome">草原</b></span>
+    <span id="clock">☀️ 白天</span>
+  </div>
+  <div id="temp-warn"></div>
+</div>
+
+<!-- 消息日志 -->
+<div id="msg-log"></div>
+<!-- 宠物列表 -->
+<div id="pet-list"></div>
+
+<!-- 快捷工具栏 -->
+<div id="hotbar"></div>
+
+<!-- 操作按钮区 -->
+<div id="action-panel">
+  <div class="abtn" id="btn-magic"><span class="bi">🔮</span>魔法</div>
+  <div class="abtn" id="btn-craft"><span class="bi">🛠️</span>合成</div>
+  <div class="abtn" id="btn-attack"><span class="bi">⚔️</span>攻击</div>
+  <div class="abtn" id="btn-gather"><span class="bi">⛏️</span>采集</div>
+  <div class="abtn" id="btn-jump"><span class="bi">⬆️</span>跳跃</div>
+  <div class="abtn" id="btn-crouch"><span class="bi">⬇️</span>蹲伏</div>
+</div>
+
+<div id="interact-tip"></div>
+
+<!-- 魔法绘制 -->
+<div id="magic-overlay">
+  <div id="magic-canvas-wrap">
+    <canvas id="magic-canvas" width="360" height="360"></canvas>
+    <div id="magic-hint">绘制魔法图案：⭕圆圈=火球术 ｜ 竖线=治疗术 ｜ 横线=疾风术 ｜ 三角=落雷术<br>松开手指/鼠标释放，右键取消</div>
+  </div>
+</div>
+
+<!-- 合成面板 -->
+<div id="craft-panel" class="panel">
+  <button id="craft-close">✕</button>
+  <h2>🛠️ 道具合成</h2>
+  <div id="bench-tip"></div>
+  <div class="tabs">
+    <div class="tab active" data-tab="recipe">📜 图纸合成</div>
+    <div class="tab" data-tab="free">🎲 自由合成</div>
+  </div>
+  <div id="recipe-list"></div>
+  <div id="free-craft" style="display:none">
+    <p style="font-size:13px;color:#9fb6d8;margin-bottom:10px">自由搭配 2~3 种材料，结果充满未知的惊喜…</p>
+    <select id="fc1"></select><select id="fc2"></select><select id="fc3"></select>
+    <br><button id="fc-go">✨ 开始合成</button>
+    <div id="fc-result" style="margin-top:10px;font-size:14px;color:#ffd166"></div>
+  </div>
+</div>
+
+<!-- 背包资源 -->
+<div id="inv-panel" class="panel"></div>
+
+<!-- 开始界面 -->
+<div id="start-screen">
+  <h1>校优秀 · 沙盒生存</h1>
+  <p>3D 自由开放世界 —— 沙漠 · 丛林 · 草原 · 海滩 · 雪原 · 海底</p>
+  <p>采集 · 合成 · 驯宠 · 绘魔 · 求生</p>
+  <button id="start-btn">进入世界</button>
+  <div class="keys-help">
+    WASD 移动 ｜ 鼠标拖拽旋转视角 ｜ Space 跳跃 ｜ C 蹲伏<br>
+    Q 攻击 ｜ E 采集 ｜ F 投喂/互动 ｜ G 捕捉 ｜ R 骑乘 ｜ B 合成 ｜ 1-8 快捷栏<br>
+    击晕野生物 → 投喂食物 → 出现爱心 → 使用捕捉器驯服
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
